@@ -32,18 +32,19 @@ git push origin --delete $VERSION 2>/dev/null || echo "远程标签不存在"
 echo ""
 echo -e "${YELLOW}步骤 3: 提交修复${NC}"
 git add .github/workflows/release.yml
-git add GITHUB_ACTIONS_FIX.md
+git add docs/GITHUB_ACTIONS_PATH_FIX.md
 git add fix-and-release.sh
 
 echo "提交更改..."
-git commit -m "fix: update GitHub Actions workflow
+git commit -m "fix: correct GitHub Actions workflow paths
 
-- Upgrade Node.js from v18 to v20
-- Remove npm cache configuration to avoid path resolution issues
-- Use working-directory for better clarity
-- Fix dependency installation step
+- Fix rust-cache workspaces path from './ccswitch-app/src-tauri' to './src-tauri'
+- Remove incorrect working-directory from npm ci step
+- Update tauri-action projectPath from './ccswitch-app' to './'
+- Fix 'No such file or directory' error in GitHub Actions
 
-This fixes the 'Some specified paths were not resolved' error."
+The issue was that the workflow assumed a nested ccswitch-app directory,
+but the repository root is already the project root."
 
 echo ""
 echo -e "${YELLOW}步骤 4: 推送到 main 分支${NC}"

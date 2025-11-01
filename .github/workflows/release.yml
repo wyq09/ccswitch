@@ -51,10 +51,9 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './ccswitch-app/src-tauri -> target'
+          workspaces: './src-tauri -> target'
 
       - name: Install frontend dependencies
-        working-directory: ccswitch-app
         run: npm ci
 
       - name: Build Tauri app (${{ matrix.name }})
@@ -63,7 +62,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SKIP_TARGETS_INSTALL: ${{ matrix.skip_targets_install }}
         with:
-          projectPath: './ccswitch-app'
+          projectPath: './'
           tagName: ${{ github.ref_name }}
           releaseName: 'CCSwitch ${{ github.ref_name }}'
           releaseBody: |
