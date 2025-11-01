@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*.*.*'  # 匹配 v1.0.0, v1.2.3 等格式的标签
 
+permissions:
+  contents: write
+
 jobs:
   build-and-release:
     strategy:

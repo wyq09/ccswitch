@@ -33,18 +33,22 @@ echo ""
 echo -e "${YELLOW}步骤 3: 提交修复${NC}"
 git add .github/workflows/release.yml
 git add docs/GITHUB_ACTIONS_PATH_FIX.md
+git add PERMISSION_FIX.md
 git add fix-and-release.sh
 
 echo "提交更改..."
-git commit -m "fix: correct GitHub Actions workflow paths
+git commit -m "fix: correct workflow paths and add permissions
 
 - Fix rust-cache workspaces path from './ccswitch-app/src-tauri' to './src-tauri'
 - Remove incorrect working-directory from npm ci step
 - Update tauri-action projectPath from './ccswitch-app' to './'
-- Fix 'No such file or directory' error in GitHub Actions
+- Add permissions.contents: write to allow Release creation
+- Fix 'No such file or directory' error
+- Fix 'Resource not accessible by integration' error
 
-The issue was that the workflow assumed a nested ccswitch-app directory,
-but the repository root is already the project root."
+The issues were:
+1. Workflow assumed a nested ccswitch-app directory (path issue)
+2. Missing permissions to create Release (permission issue)"
 
 echo ""
 echo -e "${YELLOW}步骤 4: 推送到 main 分支${NC}"
