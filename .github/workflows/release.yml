@@ -33,9 +33,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: ccswitch-app/package-lock.json
+          node-version: '20'
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -48,9 +46,8 @@ jobs:
           workspaces: './ccswitch-app/src-tauri -> target'
 
       - name: Install frontend dependencies
-        run: |
-          cd ccswitch-app
-          npm ci
+        working-directory: ccswitch-app
+        run: npm ci
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
