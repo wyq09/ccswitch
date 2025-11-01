@@ -12,17 +12,25 @@ jobs:
       matrix:
         include:
           - platform: 'macos-latest'
-            target: 'universal-apple-darwin'
-            args: '--target universal-apple-darwin'
+            name: 'macOS Universal'
+            toolchain_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            tauri_args: '--target universal-apple-darwin'
+            skip_targets_install: 'true'
           - platform: 'macos-latest'
-            target: 'aarch64-apple-darwin'
-            args: '--target aarch64-apple-darwin'
+            name: 'macOS Apple Silicon'
+            toolchain_targets: 'aarch64-apple-darwin'
+            tauri_args: '--target aarch64-apple-darwin'
+            skip_targets_install: 'false'
           - platform: 'macos-latest'
-            target: 'x86_64-apple-darwin'
-            args: '--target x86_64-apple-darwin'
+            name: 'macOS Intel'
+            toolchain_targets: 'x86_64-apple-darwin'
+            tauri_args: '--target x86_64-apple-darwin'
+            skip_targets_install: 'false'
           - platform: 'windows-latest'
-            target: 'x86_64-pc-windows-msvc'
-            args: '--target x86_64-pc-windows-msvc'
+            name: 'Windows x64'
+            toolchain_targets: 'x86_64-pc-windows-msvc'
+            tauri_args: '--target x86_64-pc-windows-msvc'
+            skip_targets_install: 'false'
 
     runs-on: ${{ matrix.platform }}
     
@@ -38,7 +46,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.toolchain_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -49,10 +57,11 @@ jobs:
         working-directory: ccswitch-app
         run: npm ci
 
-      - name: Build Tauri app
+      - name: Build Tauri app (${{ matrix.name }})
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SKIP_TARGETS_INSTALL: ${{ matrix.skip_targets_install }}
         with:
           projectPath: './ccswitch-app'
           tagName: ${{ github.ref_name }}
@@ -66,7 +75,15 @@ jobs:
             
             ### 📦 Downloads
             
-            Choose the appropriate installer for your platform below.
+            Choose the installer for your platform:
+            
+            #### macOS
+            - Universal (Intel + Apple Silicon)
+            - Apple Silicon (M-series)
+            - Intel (x64)
+            
+            #### Windows
+            - 64-bit installer
             
             ### 📖 Documentation
             
@@ -79,5 +96,5 @@ jobs:
             - Backup your `~/.claude/settings.json` before using CCSwitch
           releaseDraft: false
           prerelease: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.tauri_args }}
 
