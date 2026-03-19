@@ -6,6 +6,9 @@ export default {
     delete: 'Delete',
     edit: 'Edit',
     add: 'Add',
+    import: 'Import',
+    export: 'Export',
+    duplicate: 'Duplicate',
     back: 'Back',
     loading: 'Loading...',
     saving: 'Saving...',
@@ -29,6 +32,11 @@ export default {
     switchError: 'Switch failed',
     clearSuccess: 'All configurations cleared',
     clearError: 'Clear failed',
+    importSuccess: 'Import completed',
+    importError: 'Import failed',
+    exportSuccess: 'Export completed',
+    exportError: 'Export failed',
+    replaceImportConfirm: 'Replace existing providers? Click Cancel to merge import instead.',
   },
   providerForm: {
     addTitle: 'Add API Provider',
@@ -64,6 +72,8 @@ export default {
     deleteError: 'Delete failed',
     deleteConfirm: 'Confirm delete this provider?',
     providerNotFound: 'Provider not found',
+    duplicateSuccess: 'Provider copy created',
+    duplicateError: 'Duplicate failed',
   },
   templates: {
     claudeDefault: 'Claude Default',
@@ -77,4 +87,3 @@ export default {
     gemini: 'Google Gemini',
   },
 }
-

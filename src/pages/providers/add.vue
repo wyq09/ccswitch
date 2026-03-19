@@ -330,37 +330,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '../../stores/provider'
 import { storeToRefs } from 'pinia'
 import { useToast } from '../../composables/useToast'
-import type { Provider, Template } from '../../types'
+import type { Provider, Template, ProviderFormState } from '../../types'
+import {
+  applyTemplateToForm,
+  createDefaultProviderForm,
+  createFormFromProvider,
+} from '../../config/providerDefaults'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const providerStore = useProviderStore()
-const { allTemplates } = storeToRefs(providerStore)
+const { allTemplates, providers } = storeToRefs(providerStore)
 const toast = useToast()
 
-const form = ref({
-  name: '',
-  apiKey: '',
-  baseUrl: '',
-  icon: '',
-  tags: [] as string[],
-  models: {
-    default: '',
-    smallFast: '',
-    opus: '',
-    sonnet: '',
-    haiku: '',
-  },
-  anthropicModel: '',
-  anthropicSmallFastModel: '',
-  customEnv: {} as Record<string, string | number>,
-})
+const form = ref<ProviderFormState>(createDefaultProviderForm())
 
 const tagInput = ref('')
 const showApiKey = ref(false)
@@ -372,15 +362,28 @@ const isValid = computed(() => {
   return form.value.name.trim() !== '' && form.value.apiKey.trim() !== ''
 })
 
+onMounted(async () => {
+  await Promise.all([
+    providerStore.loadProviders(),
+    providerStore.loadTemplates(),
+  ])
+
+  const copyFromId = typeof route.query.copyFrom === 'string' ? route.query.copyFrom : ''
+  if (!copyFromId) {
+    return
+  }
+
+  const sourceProvider = providers.value.find(provider => provider.id === copyFromId)
+  if (!sourceProvider) {
+    toast.error(t('providerForm.providerNotFound'))
+    return
+  }
+
+  form.value = createFormFromProvider(sourceProvider, { duplicate: true })
+})
+
 const applyTemplate = (template: Template) => {
-  form.value.name = template.name
-  form.value.baseUrl = template.baseUrl
-  form.value.icon = template.icon
-  form.value.models.default = template.defaultModels.sonnet
-  form.value.models.smallFast = template.defaultModels.haiku
-  form.value.models.opus = template.defaultModels.opus
-  form.value.models.sonnet = template.defaultModels.sonnet
-  form.value.models.haiku = template.defaultModels.haiku
+  form.value = applyTemplateToForm(form.value, template)
 }
 
 const addTag = () => {
@@ -461,4 +464,3 @@ const handleSave = async () => {
   }
 }
 </script>
-

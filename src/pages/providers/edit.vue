@@ -13,20 +13,27 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 class="text-xl font-semibold text-gray-900">编辑 API 服务商</h1>
+          <h1 class="text-xl font-semibold text-gray-900">{{ t('providerForm.editTitle') }}</h1>
         </div>
         <div class="flex gap-2">
+          <button
+            @click="handleDuplicate"
+            class="px-4 py-2.5 border border-orange-200 text-primary hover:bg-orange-50 rounded-xl transition-all duration-300"
+            :title="t('common.duplicate')"
+          >
+            <i class="fas fa-copy"></i>
+          </button>
           <button
             @click="handleSave"
             :disabled="!isValid || saving"
             class="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {{ saving ? '保存中...' : '保存' }}
+            {{ saving ? t('common.saving') : t('common.save') }}
           </button>
           <button
             @click="showDeleteDialog = true"
             class="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all duration-300"
-            title="删除此供应商"
+            :title="t('common.delete')"
           >
             <i class="fas fa-trash-alt"></i>
           </button>
@@ -39,8 +46,8 @@
           <div class="text-gray-500">加载中...</div>
         </div>
 
-        <div v-else-if="!provider" class="flex items-center justify-center h-64">
-          <div class="text-red-500">供应商不存在</div>
+          <div v-else-if="!provider" class="flex items-center justify-center h-64">
+          <div class="text-red-500">{{ t('providerForm.providerNotFound') }}</div>
         </div>
 
         <div v-else>
@@ -49,7 +56,7 @@
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
             </svg>
-            <span class="font-medium">当前激活的供应商</span>
+            <span class="font-medium">{{ t('providers.activeProvider') }}</span>
           </div>
 
           <!-- Form -->
@@ -311,7 +318,7 @@
         class="glass-effect-lg rounded-xl p-6 max-w-md w-full mx-4"
         @click.stop
       >
-        <h3 class="text-lg font-semibold text-gray-900 mb-2">确认删除</h3>
+        <h3 class="text-lg font-semibold text-gray-900 mb-2">{{ t('common.delete') }}</h3>
         <p class="text-gray-700 mb-6">确定要删除供应商 "{{ provider?.name }}" 吗？此操作无法撤销。</p>
         <div class="flex justify-end gap-3">
           <button
@@ -335,11 +342,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '../../stores/provider'
 import { storeToRefs } from 'pinia'
 import { useToast } from '../../composables/useToast'
-import type { Provider } from '../../types'
+import type { Provider, ProviderFormState } from '../../types'
+import { createDefaultProviderForm, createFormFromProvider } from '../../config/providerDefaults'
 
+const { t } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const providerStore = useProviderStore()
@@ -359,23 +369,7 @@ const provider = computed(() =>
   providers.value.find(p => p.id === providerId)
 )
 
-const form = ref({
-  name: '',
-  apiKey: '',
-  baseUrl: '',
-  icon: '',
-  tags: [] as string[],
-  models: {
-    default: '',
-    smallFast: '',
-    opus: '',
-    sonnet: '',
-    haiku: '',
-  },
-  anthropicModel: '',
-  anthropicSmallFastModel: '',
-  customEnv: {} as Record<string, string | number>,
-})
+const form = ref<ProviderFormState>(createDefaultProviderForm())
 
 const isValid = computed(() => {
   return form.value.name.trim() !== '' && form.value.apiKey.trim() !== ''
@@ -384,17 +378,7 @@ const isValid = computed(() => {
 onMounted(async () => {
   await providerStore.loadProviders()
   if (provider.value) {
-    form.value = {
-      name: provider.value.name,
-      apiKey: provider.value.apiKey,
-      baseUrl: provider.value.baseUrl,
-      icon: provider.value.icon || '',
-      tags: [...provider.value.tags],
-      models: { ...provider.value.models },
-      anthropicModel: provider.value.anthropicModel || '',
-      anthropicSmallFastModel: provider.value.anthropicSmallFastModel || '',
-      customEnv: { ...(provider.value.customEnv || {}) },
-    }
+    form.value = createFormFromProvider(provider.value)
   }
   loading.value = false
 })
@@ -446,6 +430,13 @@ const handleBack = () => {
   router.back()
 }
 
+const handleDuplicate = () => {
+  router.push({
+    path: '/providers/add',
+    query: { copyFrom: providerId },
+  })
+}
+
 const handleSave = async () => {
   if (!isValid.value || !provider.value) return
 
@@ -465,11 +456,11 @@ const handleSave = async () => {
       updatedAt: Date.now(),
     }
     await providerStore.saveProvider(updatedProvider)
-    toast.success('供应商更新成功')
+    toast.success(t('providerForm.saveSuccess'))
     router.push('/providers')
   } catch (e) {
     console.error('Failed to save provider:', e)
-    toast.error('保存失败：' + e)
+    toast.error(t('providerForm.saveError') + '：' + e)
   } finally {
     saving.value = false
   }
@@ -478,12 +469,11 @@ const handleSave = async () => {
 const confirmDelete = async () => {
   try {
     await providerStore.deleteProvider(providerId)
-    toast.success('供应商删除成功')
+    toast.success(t('providerForm.deleteSuccess'))
     router.push('/providers')
   } catch (e) {
     console.error('Failed to delete provider:', e)
-    toast.error('删除失败：' + e)
+    toast.error(t('providerForm.deleteError') + '：' + e)
   }
 }
 </script>
-

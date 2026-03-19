@@ -16,6 +16,21 @@
           {{ t('providers.addProvider') }}
         </button>
         <button 
+          @click="handleImport"
+          class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center"
+        >
+          <i class="fas fa-file-import mr-2"></i>
+          {{ t('common.import') }}
+        </button>
+        <button 
+          v-if="providers.length > 0"
+          @click="handleExport"
+          class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors flex items-center"
+        >
+          <i class="fas fa-file-export mr-2"></i>
+          {{ t('common.export') }}
+        </button>
+        <button 
           v-if="providers.length > 0"
           @click="showClearDialog = true"
           class="px-4 py-2 border border-red-300 text-red-600 rounded-md hover:bg-red-50 transition-colors"
@@ -110,6 +125,14 @@
                 <i class="fas fa-check-circle text-2xl"></i>
               </span>
               <button 
+                @click.stop="handleDuplicate(provider.id)"
+                class="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+                :class="provider.isActive ? 'text-white/80 hover:bg-white/20' : 'text-gray-400 hover:bg-gray-100'"
+                :title="t('common.duplicate')"
+              >
+                <i class="fas fa-copy"></i>
+              </button>
+              <button 
                 @click.stop="handleEdit(provider.id)"
                 class="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
                 :class="provider.isActive ? 'text-white/80 hover:bg-white/20' : 'text-gray-400 hover:bg-gray-100'"
@@ -175,6 +198,7 @@ import { useI18n } from 'vue-i18n'
 import { useProviderStore } from '../../stores/provider'
 import { storeToRefs } from 'pinia'
 import { exit } from '@tauri-apps/plugin-process'
+import { open, save } from '@tauri-apps/plugin-dialog'
 import { useToast } from '../../composables/useToast'
 import LanguageSwitcher from '../../components/LanguageSwitcher.vue'
 
@@ -193,6 +217,13 @@ const handleAdd = () => {
   router.push('/providers/add')
 }
 
+const handleDuplicate = (id: string) => {
+  router.push({
+    path: '/providers/add',
+    query: { copyFrom: id },
+  })
+}
+
 const handleEdit = (id: string) => {
   router.push(`/providers/${id}/edit`)
 }
@@ -203,6 +234,45 @@ const handleSwitch = async (id: string) => {
     toast.success(t('providers.switchSuccess'))
   } catch (e) {
     toast.error(t('providers.switchError') + '：' + e)
+  }
+}
+
+const handleImport = async () => {
+  try {
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (!selected || Array.isArray(selected)) {
+      return
+    }
+
+    const replaceExisting = providers.value.length > 0
+      ? window.confirm(t('providers.replaceImportConfirm'))
+      : false
+
+    await providerStore.importProvidersFromFile(selected, replaceExisting)
+    toast.success(t('providers.importSuccess'))
+  } catch (e) {
+    toast.error(t('providers.importError') + '：' + e)
+  }
+}
+
+const handleExport = async () => {
+  try {
+    const target = await save({
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      defaultPath: 'ccswitch-providers.json',
+    })
+    if (!target) {
+      return
+    }
+
+    await providerStore.exportProvidersToFile(target)
+    toast.success(t('providers.exportSuccess'))
+  } catch (e) {
+    toast.error(t('providers.exportError') + '：' + e)
   }
 }
 
@@ -227,4 +297,3 @@ const handleButtonHover = (isEntering: boolean, event: MouseEvent) => {
   }
 }
 </script>
-

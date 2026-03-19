@@ -122,6 +122,41 @@ export const useProviderStore = defineStore('provider', () => {
     }
   }
 
+  async function exportProvidersToFile(path: string) {
+    try {
+      loading.value = true
+      error.value = null
+      await invoke('export_providers_to_file', { path })
+    } catch (e) {
+      error.value = e as string
+      console.error('Failed to export providers:', e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function importProvidersFromFile(path: string, replaceExisting = false) {
+    try {
+      loading.value = true
+      error.value = null
+      const total = await invoke<number>('import_providers_from_file', {
+        payload: {
+          path,
+          replaceExisting,
+        },
+      })
+      await loadProviders()
+      return total
+    } catch (e) {
+      error.value = e as string
+      console.error('Failed to import providers:', e)
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     providers,
     customTemplates,
@@ -137,6 +172,7 @@ export const useProviderStore = defineStore('provider', () => {
     loadTemplates,
     saveTemplate,
     deleteTemplate,
+    exportProvidersToFile,
+    importProvidersFromFile,
   }
 })
-

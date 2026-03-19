@@ -6,6 +6,9 @@ export default {
     delete: '删除',
     edit: '编辑',
     add: '添加',
+    import: '导入',
+    export: '导出',
+    duplicate: '复制',
     back: '返回',
     loading: '加载中...',
     saving: '保存中...',
@@ -29,6 +32,11 @@ export default {
     switchError: '切换失败',
     clearSuccess: '已清空所有配置',
     clearError: '清空失败',
+    importSuccess: '导入成功',
+    importError: '导入失败',
+    exportSuccess: '导出成功',
+    exportError: '导出失败',
+    replaceImportConfirm: '是否替换现有供应商配置？点击“取消”将合并导入。',
   },
   providerForm: {
     addTitle: '添加 API 服务商',
@@ -64,6 +72,8 @@ export default {
     deleteError: '删除失败',
     deleteConfirm: '确认删除此供应商？',
     providerNotFound: '供应商不存在',
+    duplicateSuccess: '已创建供应商副本',
+    duplicateError: '复制失败',
   },
   templates: {
     claudeDefault: 'Claude 默认',
@@ -77,4 +87,3 @@ export default {
     gemini: 'Google Gemini',
   },
 }
-

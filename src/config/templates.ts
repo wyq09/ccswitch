@@ -7,9 +7,9 @@ export const BUILTIN_TEMPLATES: Template[] = [
     icon: '/src/assets/logo/Claude.svg',
     baseUrl: 'https://api.anthropic.com',
     defaultModels: {
-      opus: 'claude-opus-4',
-      sonnet: 'claude-sonnet-4.5',
-      haiku: 'claude-haiku-4',
+      opus: 'claude-opus-4-6',
+      sonnet: 'claude-sonnet-4-5',
+      haiku: 'claude-haiku-4-5',
     },
   },
   {
@@ -18,8 +18,8 @@ export const BUILTIN_TEMPLATES: Template[] = [
     icon: '/src/assets/logo/Zhipu.svg',
     baseUrl: 'https://open.bigmodel.cn/api/anthropic',
     defaultModels: {
-      opus: 'glm-4.6',
-      sonnet: 'glm-4.6',
+      opus: 'glm-4.7',
+      sonnet: 'glm-4.7',
       haiku: 'glm-4.5-air',
     },
   },
@@ -62,9 +62,9 @@ export const BUILTIN_TEMPLATES: Template[] = [
     icon: '/src/assets/logo/minimax.svg',
     baseUrl: 'https://api.minimax.chat/anthropic',
     defaultModels: {
-      opus: 'MiniMax-M2',
-      sonnet: 'MiniMax-M2',
-      haiku: 'MiniMax-M2',
+      opus: 'MiniMax-M2.5',
+      sonnet: 'MiniMax-M2.5',
+      haiku: 'MiniMax-M2.5',
     },
   },
   {
@@ -73,9 +73,9 @@ export const BUILTIN_TEMPLATES: Template[] = [
     icon: '/src/assets/logo/qwen.svg',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModels: {
-      opus: 'qwen-max',
-      sonnet: 'qwen-plus',
-      haiku: 'qwen-turbo',
+      opus: 'qwen-max-latest',
+      sonnet: 'qwen-plus-latest',
+      haiku: 'qwen-turbo-latest',
     },
   },
   {
@@ -84,10 +84,9 @@ export const BUILTIN_TEMPLATES: Template[] = [
     icon: '/src/assets/logo/OpenRouter.svg',
     baseUrl: 'https://openrouter.ai/api/v1',
     defaultModels: {
-      opus: 'anthropic/claude-opus-4',
-      sonnet: 'anthropic/claude-sonnet-4',
-      haiku: 'anthropic/claude-haiku-4',
+      opus: 'anthropic/claude-opus-4.6',
+      sonnet: 'anthropic/claude-sonnet-4.5',
+      haiku: 'anthropic/claude-haiku-4.5',
     },
   }
 ]
-

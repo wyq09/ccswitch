@@ -1,3 +1,13 @@
+export type ProviderModels = {
+  default: string
+  smallFast: string
+  opus: string
+  sonnet: string
+  haiku: string
+}
+
+export type ProviderCustomEnv = Record<string, string | number>
+
 export type Provider = {
   id: string
   name: string
@@ -5,19 +15,25 @@ export type Provider = {
   baseUrl: string
   apiKey: string
   tags: string[]
-  models: {
-    default: string
-    smallFast: string
-    opus: string
-    sonnet: string
-    haiku: string
-  }
+  models: ProviderModels
   anthropicModel?: string
   anthropicSmallFastModel?: string
-  customEnv?: Record<string, string | number>  // 自定义环境变量
+  customEnv?: ProviderCustomEnv
   isActive: boolean
   createdAt: number
   updatedAt: number
+}
+
+export type ProviderFormState = {
+  name: string
+  apiKey: string
+  baseUrl: string
+  icon: string
+  tags: string[]
+  models: ProviderModels
+  anthropicModel: string
+  anthropicSmallFastModel: string
+  customEnv: ProviderCustomEnv
 }
 
 export type Template = {
@@ -37,7 +53,9 @@ export type ClaudeSettings = {
     ANTHROPIC_BASE_URL?: string
     ANTHROPIC_AUTH_TOKEN?: string
     API_TIMEOUT_MS?: string
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC?: number
+    AUTOPILOT?: string
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC?: string | number
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS?: string
     ANTHROPIC_MODEL?: string
     ANTHROPIC_SMALL_FAST_MODEL?: string
     ANTHROPIC_DEFAULT_SONNET_MODEL?: string
@@ -47,4 +65,3 @@ export type ClaudeSettings = {
   }
   [key: string]: any
 }
-
