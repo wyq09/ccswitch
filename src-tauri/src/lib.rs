@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +93,54 @@ struct TemplateModels {
     haiku: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Project {
+    id: String,
+    name: String,
+    path: String,
+    #[serde(rename = "providerId")]
+    provider_id: String,
+    #[serde(default)]
+    model: String,
+    #[serde(rename = "terminalTool")]
+    #[serde(default)]
+    terminal_tool: String,
+    #[serde(rename = "launchCommandTemplate")]
+    #[serde(default)]
+    launch_command_template: String,
+    #[serde(rename = "terminalOpenCommandTemplate")]
+    #[serde(default)]
+    terminal_open_command_template: String,
+    #[serde(rename = "createdAt")]
+    created_at: i64,
+    #[serde(rename = "updatedAt")]
+    updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct TerminalToolPreset {
+    id: String,
+    name: String,
+    description: String,
+    #[serde(rename = "defaultCommandTemplate")]
+    default_command_template: String,
+    #[serde(rename = "defaultOpenCommandTemplate")]
+    default_open_command_template: String,
+    #[serde(rename = "requiresOpenCommandTemplate")]
+    requires_open_command_template: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct LaunchProjectResult {
+    command: String,
+    #[serde(rename = "terminalTool")]
+    terminal_tool: String,
+    #[serde(rename = "providerName")]
+    provider_name: String,
+    #[serde(rename = "projectName")]
+    project_name: String,
+}
+
 #[derive(Debug, Clone, Default)]
 struct ClaudeSettings {
     env: serde_json::Map<String, serde_json::Value>,
@@ -126,6 +175,348 @@ const MANAGED_CLAUDE_ENV_KEYS: [&str; 12] = [
     "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 ];
 
+#[derive(Clone, Copy)]
+enum ShellKind {
+    Posix,
+    PowerShell,
+    Cmd,
+}
+
+fn default_terminal_tool_id() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "terminal"
+    } else if cfg!(target_os = "windows") {
+        "powershell"
+    } else {
+        "gnome-terminal"
+    }
+}
+
+fn terminal_requires_open_command_template(tool_id: &str) -> bool {
+    tool_id == "custom"
+}
+
+#[cfg(target_os = "macos")]
+fn mac_app_installed(app_name: &str) -> bool {
+    Command::new("open")
+        .args(["-Ra", app_name])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn command_exists(command: &str) -> bool {
+    Command::new("cmd")
+        .args(["/C", &format!("where {command} >nul 2>nul")])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn command_exists(command: &str) -> bool {
+    Command::new("sh")
+        .args(["-lc", &format!("command -v {command} >/dev/null 2>&1")])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn terminal_tool_available(tool_id: &str) -> bool {
+    if terminal_requires_open_command_template(tool_id) {
+        return true;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return match tool_id {
+            "terminal" => mac_app_installed("Terminal"),
+            "iterm" => mac_app_installed("iTerm"),
+            "ghostty" => mac_app_installed("Ghostty"),
+            _ => false,
+        };
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return match tool_id {
+            "powershell" => true,
+            "cmd" => true,
+            "windows-terminal" => command_exists("wt.exe"),
+            _ => false,
+        };
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        return match tool_id {
+            "gnome-terminal" => command_exists("gnome-terminal"),
+            "konsole" => command_exists("konsole"),
+            "xterm" => command_exists("xterm"),
+            _ => false,
+        };
+    }
+
+    #[allow(unreachable_code)]
+    false
+}
+
+fn default_launch_command_template(tool_id: &str) -> &'static str {
+    match tool_id {
+        "powershell" | "windows-terminal" => {
+            "Set-Location -LiteralPath {projectPath}; claude --model {model} --dangerously-skip-permissions"
+        }
+        "cmd" => "cd /d {projectPath} && claude --model {model} --dangerously-skip-permissions",
+        _ => "cd {projectPath} && claude --model {model} --dangerously-skip-permissions",
+    }
+}
+
+fn default_open_command_template(tool_id: &str) -> &'static str {
+    match tool_id {
+        "custom" => {
+            #[cfg(target_os = "macos")]
+            {
+                return "open -na Ghostty --args -e /bin/zsh -lc {command}";
+            }
+            #[cfg(target_os = "windows")]
+            {
+                return "wt.exe new-tab powershell.exe -NoExit -Command {command}";
+            }
+            #[cfg(all(unix, not(target_os = "macos")))]
+            {
+                return "xterm -hold -e bash -lc {command}";
+            }
+            #[allow(unreachable_code)]
+            ""
+        }
+        _ => "",
+    }
+}
+
+fn terminal_tool_presets() -> Vec<TerminalToolPreset> {
+    #[cfg(target_os = "macos")]
+    {
+        return vec![
+            TerminalToolPreset {
+                id: "terminal".to_string(),
+                name: "Terminal".to_string(),
+                description: "macOS Terminal.app".to_string(),
+                default_command_template: default_launch_command_template("terminal").to_string(),
+                default_open_command_template: default_open_command_template("terminal")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("terminal"),
+            },
+            TerminalToolPreset {
+                id: "iterm".to_string(),
+                name: "iTerm".to_string(),
+                description: "iTerm2".to_string(),
+                default_command_template: default_launch_command_template("iterm").to_string(),
+                default_open_command_template: default_open_command_template("iterm")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("iterm"),
+            },
+            TerminalToolPreset {
+                id: "ghostty".to_string(),
+                name: "Ghostty".to_string(),
+                description: "Ghostty.app".to_string(),
+                default_command_template: default_launch_command_template("ghostty").to_string(),
+                default_open_command_template: default_open_command_template("ghostty")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("ghostty"),
+            },
+            TerminalToolPreset {
+                id: "custom".to_string(),
+                name: "自定义".to_string(),
+                description: "自定义终端打开命令".to_string(),
+                default_command_template: default_launch_command_template("custom").to_string(),
+                default_open_command_template: default_open_command_template("custom")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("custom"),
+            },
+        ]
+        .into_iter()
+        .filter(|preset| terminal_tool_available(&preset.id))
+        .collect();
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return vec![
+            TerminalToolPreset {
+                id: "powershell".to_string(),
+                name: "PowerShell".to_string(),
+                description: "Windows PowerShell".to_string(),
+                default_command_template: default_launch_command_template("powershell").to_string(),
+                default_open_command_template: default_open_command_template("powershell")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template(
+                    "powershell",
+                ),
+            },
+            TerminalToolPreset {
+                id: "windows-terminal".to_string(),
+                name: "Windows Terminal".to_string(),
+                description: "wt.exe".to_string(),
+                default_command_template: default_launch_command_template("windows-terminal")
+                    .to_string(),
+                default_open_command_template: default_open_command_template("windows-terminal")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template(
+                    "windows-terminal",
+                ),
+            },
+            TerminalToolPreset {
+                id: "cmd".to_string(),
+                name: "Command Prompt".to_string(),
+                description: "cmd.exe".to_string(),
+                default_command_template: default_launch_command_template("cmd").to_string(),
+                default_open_command_template: default_open_command_template("cmd").to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("cmd"),
+            },
+            TerminalToolPreset {
+                id: "custom".to_string(),
+                name: "Custom".to_string(),
+                description: "Custom terminal open command".to_string(),
+                default_command_template: default_launch_command_template("custom").to_string(),
+                default_open_command_template: default_open_command_template("custom")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("custom"),
+            },
+        ]
+        .into_iter()
+        .filter(|preset| terminal_tool_available(&preset.id))
+        .collect();
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        return vec![
+            TerminalToolPreset {
+                id: "gnome-terminal".to_string(),
+                name: "GNOME Terminal".to_string(),
+                description: "gnome-terminal".to_string(),
+                default_command_template: default_launch_command_template("gnome-terminal")
+                    .to_string(),
+                default_open_command_template: default_open_command_template("gnome-terminal")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template(
+                    "gnome-terminal",
+                ),
+            },
+            TerminalToolPreset {
+                id: "konsole".to_string(),
+                name: "Konsole".to_string(),
+                description: "KDE Konsole".to_string(),
+                default_command_template: default_launch_command_template("konsole").to_string(),
+                default_open_command_template: default_open_command_template("konsole")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("konsole"),
+            },
+            TerminalToolPreset {
+                id: "xterm".to_string(),
+                name: "XTerm".to_string(),
+                description: "xterm".to_string(),
+                default_command_template: default_launch_command_template("xterm").to_string(),
+                default_open_command_template: default_open_command_template("xterm").to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("xterm"),
+            },
+            TerminalToolPreset {
+                id: "custom".to_string(),
+                name: "Custom".to_string(),
+                description: "Custom terminal open command".to_string(),
+                default_command_template: default_launch_command_template("custom").to_string(),
+                default_open_command_template: default_open_command_template("custom")
+                    .to_string(),
+                requires_open_command_template: terminal_requires_open_command_template("custom"),
+            },
+        ]
+        .into_iter()
+        .filter(|preset| terminal_tool_available(&preset.id))
+        .collect();
+    }
+
+    #[allow(unreachable_code)]
+    Vec::new()
+}
+
+fn shell_kind_for_tool(tool_id: &str) -> Result<ShellKind, String> {
+    match tool_id {
+        "powershell" | "windows-terminal" => Ok(ShellKind::PowerShell),
+        "cmd" => Ok(ShellKind::Cmd),
+        "terminal" | "iterm" | "ghostty" | "gnome-terminal" | "konsole" | "xterm" => {
+            Ok(ShellKind::Posix)
+        }
+        "custom" => {
+            if cfg!(target_os = "windows") {
+                Ok(ShellKind::PowerShell)
+            } else {
+                Ok(ShellKind::Posix)
+            }
+        }
+        _ => Err(format!("Unsupported terminal tool: {}", tool_id)),
+    }
+}
+
+fn escape_posix(value: &str) -> String {
+    if value.is_empty() {
+        "''".to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "'\"'\"'"))
+    }
+}
+
+fn escape_powershell(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn escape_cmd(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn render_launch_command(
+    template: &str,
+    project_path: &str,
+    model: &str,
+    shell_kind: ShellKind,
+) -> String {
+    let escape = |value: &str| match shell_kind {
+        ShellKind::Posix => escape_posix(value),
+        ShellKind::PowerShell => escape_powershell(value),
+        ShellKind::Cmd => escape_cmd(value),
+    };
+
+    template
+        .replace("{projectPath}", &escape(project_path))
+        .replace("{model}", &escape(model))
+}
+
+fn render_open_command(template: &str, command: &str, shell_kind: ShellKind) -> String {
+    let escaped_command = match shell_kind {
+        ShellKind::Posix => escape_posix(command),
+        ShellKind::PowerShell => escape_powershell(command),
+        ShellKind::Cmd => escape_cmd(command),
+    };
+
+    template.replace("{command}", &escaped_command)
+}
+
+fn claude_installed() -> bool {
+    if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", "where claude >nul 2>nul"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    } else {
+        Command::new("sh")
+            .args(["-lc", "command -v claude >/dev/null 2>&1"])
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+}
+
 fn default_custom_env() -> serde_json::Map<String, serde_json::Value> {
     let mut env = serde_json::Map::new();
     env.insert("API_TIMEOUT_MS".to_string(), serde_json::json!("3000000"));
@@ -145,6 +536,79 @@ fn merge_default_custom_env(custom_env: &mut serde_json::Map<String, serde_json:
     for (key, value) in default_custom_env() {
         custom_env.entry(key).or_insert(value);
     }
+}
+
+fn json_value_to_env_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(inner) => inner.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn provider_env_pairs(provider: &Provider) -> Vec<(String, String)> {
+    let anthropic_model = provider
+        .anthropic_model
+        .as_deref()
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or(&provider.models.default)
+        .to_string();
+    let anthropic_small_fast_model = provider
+        .anthropic_small_fast_model
+        .as_deref()
+        .filter(|model| !model.trim().is_empty())
+        .unwrap_or(&provider.models.small_fast)
+        .to_string();
+
+    let mut pairs = vec![
+        ("ANTHROPIC_BASE_URL".to_string(), provider.base_url.clone()),
+        ("ANTHROPIC_AUTH_TOKEN".to_string(), provider.api_key.clone()),
+        ("ANTHROPIC_MODEL".to_string(), anthropic_model),
+        (
+            "ANTHROPIC_SMALL_FAST_MODEL".to_string(),
+            anthropic_small_fast_model,
+        ),
+        (
+            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
+            provider.models.sonnet.clone(),
+        ),
+        (
+            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
+            provider.models.opus.clone(),
+        ),
+        (
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
+            provider.models.haiku.clone(),
+        ),
+    ];
+
+    for (key, value) in provider.custom_env.iter() {
+        pairs.push((key.clone(), json_value_to_env_string(value)));
+    }
+
+    pairs
+}
+
+fn prepend_provider_env_to_command(
+    command: &str,
+    provider: &Provider,
+    shell_kind: ShellKind,
+) -> String {
+    let prefix = provider_env_pairs(provider)
+        .into_iter()
+        .map(|(key, value)| match shell_kind {
+            ShellKind::Posix => format!("export {key}={}", escape_posix(&value)),
+            ShellKind::PowerShell => format!("$env:{key}={}", escape_powershell(&value)),
+            ShellKind::Cmd => format!("set \"{key}={value}\""),
+        })
+        .collect::<Vec<_>>();
+
+    let separator = match shell_kind {
+        ShellKind::Posix | ShellKind::PowerShell => "; ",
+        ShellKind::Cmd => " && ",
+    };
+
+    format!("{}{}{}", prefix.join(separator), separator, command)
 }
 
 impl Models {
@@ -200,6 +664,42 @@ impl ProviderV1 {
     }
 }
 
+impl Project {
+    fn normalize(mut self, providers: &[Provider]) -> Self {
+        let available_presets = terminal_tool_presets();
+        if self.terminal_tool.trim().is_empty() {
+            self.terminal_tool = available_presets
+                .first()
+                .map(|preset| preset.id.clone())
+                .unwrap_or_else(|| default_terminal_tool_id().to_string());
+        } else if !available_presets
+            .iter()
+            .any(|preset| preset.id == self.terminal_tool)
+        {
+            self.terminal_tool = available_presets
+                .first()
+                .map(|preset| preset.id.clone())
+                .unwrap_or_else(|| default_terminal_tool_id().to_string());
+        }
+        if self.launch_command_template.trim().is_empty() {
+            self.launch_command_template =
+                default_launch_command_template(&self.terminal_tool).to_string();
+        }
+        if self.model.trim().is_empty() {
+            if let Some(provider) = providers.iter().find(|item| item.id == self.provider_id) {
+                self.model = provider.models.default.clone();
+            }
+        }
+        if terminal_requires_open_command_template(&self.terminal_tool)
+            && self.terminal_open_command_template.trim().is_empty()
+        {
+            self.terminal_open_command_template =
+                default_open_command_template(&self.terminal_tool).to_string();
+        }
+        self
+    }
+}
+
 fn get_app_data_dir(app: tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -217,6 +717,13 @@ fn get_templates_file_path(app: tauri::AppHandle) -> Result<PathBuf, String> {
     let mut path = get_app_data_dir(app)?;
     fs::create_dir_all(&path).map_err(|e| format!("Failed to create app data dir: {}", e))?;
     path.push("templates.json");
+    Ok(path)
+}
+
+fn get_projects_file_path(app: tauri::AppHandle) -> Result<PathBuf, String> {
+    let mut path = get_app_data_dir(app)?;
+    fs::create_dir_all(&path).map_err(|e| format!("Failed to create app data dir: {}", e))?;
+    path.push("projects.json");
     Ok(path)
 }
 
@@ -258,6 +765,15 @@ fn parse_providers_content(content: &str) -> Result<Vec<Provider>, String> {
         .map(|e| e.to_string())
         .unwrap_or_else(|| "Unknown provider file format".to_string());
     Err(format!("Failed to parse providers file: {}", err))
+}
+
+fn parse_projects_content(content: &str, providers: &[Provider]) -> Result<Vec<Project>, String> {
+    let projects: Vec<Project> = serde_json::from_str(content)
+        .map_err(|e| format!("Failed to parse projects file: {}", e))?;
+    Ok(projects
+        .into_iter()
+        .map(|project| project.normalize(providers))
+        .collect())
 }
 
 fn ensure_single_active_provider(providers: &mut [Provider]) {
@@ -303,10 +819,39 @@ fn load_providers_from_path(path: &Path) -> Result<Vec<Provider>, String> {
     Ok(providers)
 }
 
+fn load_projects_from_path(path: &Path, providers: &[Provider]) -> Result<Vec<Project>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read projects file: {}", e))?;
+
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let projects = parse_projects_content(&content, providers)?;
+    let normalized_content = serde_json::to_string_pretty(&projects)
+        .map_err(|e| format!("Failed to serialize projects: {}", e))?;
+    if content.trim() != normalized_content {
+        fs::write(path, normalized_content)
+            .map_err(|e| format!("Failed to write migrated projects: {}", e))?;
+    }
+
+    Ok(projects)
+}
+
 fn write_providers_to_path(path: &Path, providers: &[Provider]) -> Result<(), String> {
     let content = serde_json::to_string_pretty(providers)
         .map_err(|e| format!("Failed to serialize providers: {}", e))?;
     fs::write(path, content).map_err(|e| format!("Failed to write providers file: {}", e))
+}
+
+fn write_projects_to_path(path: &Path, projects: &[Project]) -> Result<(), String> {
+    let content = serde_json::to_string_pretty(projects)
+        .map_err(|e| format!("Failed to serialize projects: {}", e))?;
+    fs::write(path, content).map_err(|e| format!("Failed to write projects file: {}", e))
 }
 
 fn managed_env_keys_for_provider(provider: Option<&Provider>) -> BTreeSet<String> {
@@ -450,6 +995,191 @@ fn update_claude_settings(
     save_claude_settings(&settings_path, settings)
 }
 
+fn activate_provider(app: tauri::AppHandle, id: &str) -> Result<Provider, String> {
+    let path = get_providers_file_path(app.clone())?;
+    let mut providers = load_providers(app)?;
+    let previous_active_provider = providers.iter().find(|provider| provider.is_active).cloned();
+    let provider = providers
+        .iter()
+        .find(|provider| provider.id == id)
+        .ok_or("Provider not found")?
+        .clone()
+        .normalize();
+
+    for item in &mut providers {
+        item.is_active = item.id == id;
+    }
+
+    write_providers_to_path(&path, &providers)?;
+    update_claude_settings(previous_active_provider.as_ref(), &provider)?;
+    Ok(provider)
+}
+
+fn validate_project(project: &Project, providers: &[Provider]) -> Result<(), String> {
+    if project.name.trim().is_empty() {
+        return Err("Project name is required".to_string());
+    }
+    if project.path.trim().is_empty() {
+        return Err("Project path is required".to_string());
+    }
+    if project.provider_id.trim().is_empty() {
+        return Err("Provider is required".to_string());
+    }
+    if providers.iter().all(|provider| provider.id != project.provider_id) {
+        return Err("Selected provider not found".to_string());
+    }
+    if project.model.trim().is_empty() {
+        return Err("Model is required".to_string());
+    }
+    if project.terminal_tool.trim().is_empty() {
+        return Err("Terminal tool is required".to_string());
+    }
+    if project.launch_command_template.trim().is_empty() {
+        return Err("Launch command template is required".to_string());
+    }
+    if terminal_requires_open_command_template(&project.terminal_tool)
+        && project.terminal_open_command_template.trim().is_empty()
+    {
+        return Err("Terminal open command template is required".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn launch_command_in_terminal(
+    tool_id: &str,
+    command: &str,
+    open_command_template: Option<&str>,
+) -> Result<(), String> {
+    if tool_id == "ghostty" {
+        Command::new("open")
+            .args(["-na", "Ghostty", "--args", "-e", "/bin/zsh", "-lc", command])
+            .spawn()
+            .map_err(|e| format!("Failed to open Ghostty: {}", e))?;
+        return Ok(());
+    }
+
+    if tool_id == "custom" {
+        let template = open_command_template
+            .ok_or("Custom terminal open command template is required")?;
+        let rendered = render_open_command(template, command, ShellKind::Posix);
+        Command::new("sh")
+            .args(["-lc", &rendered])
+            .spawn()
+            .map_err(|e| format!("Failed to open custom terminal: {}", e))?;
+        return Ok(());
+    }
+
+    let script_lines = match tool_id {
+        "terminal" => vec![
+            "on run argv",
+            "tell application id \"com.apple.Terminal\"",
+            "activate",
+            "do script (item 1 of argv)",
+            "end tell",
+            "end run",
+        ],
+        "iterm" => vec![
+            "on run argv",
+            "tell application id \"com.googlecode.iterm2\"",
+            "activate",
+            "set newWindow to create window with default profile",
+            "tell current session of newWindow to write text (item 1 of argv)",
+            "end tell",
+            "end run",
+        ],
+        _ => return Err(format!("Unsupported terminal tool: {}", tool_id)),
+    };
+
+    let mut apple_script = Command::new("osascript");
+    for line in script_lines {
+        apple_script.arg("-e").arg(line);
+    }
+    let output = apple_script
+        .arg(command)
+        .output()
+        .map_err(|e| format!("Failed to open terminal: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err(format!("Failed to open terminal tool: {}", tool_id));
+        }
+        return Err(format!(
+            "Failed to open terminal tool {}: {}",
+            tool_id, stderr
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_command_in_terminal(
+    tool_id: &str,
+    command: &str,
+    open_command_template: Option<&str>,
+) -> Result<(), String> {
+    let mut child = match tool_id {
+        "powershell" => Command::new("powershell.exe")
+            .args(["-NoExit", "-Command", command])
+            .spawn(),
+        "windows-terminal" => Command::new("wt.exe")
+            .args(["new-tab", "powershell.exe", "-NoExit", "-Command", command])
+            .spawn(),
+        "cmd" => Command::new("cmd.exe").args(["/K", command]).spawn(),
+        "custom" => {
+            let template = open_command_template
+                .ok_or("Custom terminal open command template is required")?;
+            let rendered = render_open_command(template, command, ShellKind::PowerShell);
+            Command::new("powershell.exe")
+                .args(["-NoProfile", "-Command", &rendered])
+                .spawn()
+        }
+        _ => return Err(format!("Unsupported terminal tool: {}", tool_id)),
+    }
+    .map_err(|e| format!("Failed to open terminal: {}", e))?;
+
+    let _ = child.id();
+    Ok(())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn launch_command_in_terminal(
+    tool_id: &str,
+    command: &str,
+    open_command_template: Option<&str>,
+) -> Result<(), String> {
+    if tool_id == "custom" {
+        let template = open_command_template
+            .ok_or("Custom terminal open command template is required")?;
+        let rendered = render_open_command(template, command, ShellKind::Posix);
+        Command::new("sh")
+            .args(["-lc", &rendered])
+            .spawn()
+            .map_err(|e| format!("Failed to open custom terminal: {}", e))?;
+        return Ok(());
+    }
+
+    let hold_command = format!("{command}; exec bash");
+    let mut child = match tool_id {
+        "gnome-terminal" => Command::new("gnome-terminal")
+            .args(["--", "bash", "-lc", &hold_command])
+            .spawn(),
+        "konsole" => Command::new("konsole")
+            .args(["--noclose", "-e", "bash", "-lc", &hold_command])
+            .spawn(),
+        "xterm" => Command::new("xterm")
+            .args(["-hold", "-e", "bash", "-lc", &hold_command])
+            .spawn(),
+        _ => return Err(format!("Unsupported terminal tool: {}", tool_id)),
+    }
+    .map_err(|e| format!("Failed to open terminal: {}", e))?;
+
+    let _ = child.id();
+    Ok(())
+}
+
 #[tauri::command]
 fn load_providers(app: tauri::AppHandle) -> Result<Vec<Provider>, String> {
     let path = get_providers_file_path(app)?;
@@ -528,25 +1258,7 @@ fn delete_provider(app: tauri::AppHandle, id: String) -> Result<(), String> {
 
 #[tauri::command]
 fn switch_provider(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    let path = get_providers_file_path(app.clone())?;
-    let mut providers = load_providers(app)?;
-    let previous_active_provider = providers
-        .iter()
-        .find(|provider| provider.is_active)
-        .cloned();
-    let provider = providers
-        .iter()
-        .find(|provider| provider.id == id)
-        .ok_or("Provider not found")?
-        .clone()
-        .normalize();
-
-    for item in &mut providers {
-        item.is_active = item.id == id;
-    }
-
-    write_providers_to_path(&path, &providers)?;
-    update_claude_settings(previous_active_provider.as_ref(), &provider)
+    activate_provider(app, &id).map(|_| ())
 }
 
 #[tauri::command]
@@ -674,6 +1386,99 @@ fn get_claude_settings_path_cmd() -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn load_projects(app: tauri::AppHandle) -> Result<Vec<Project>, String> {
+    let providers = load_providers(app.clone())?;
+    let path = get_projects_file_path(app)?;
+    load_projects_from_path(&path, &providers)
+}
+
+#[tauri::command]
+fn save_project(app: tauri::AppHandle, project: Project) -> Result<(), String> {
+    let providers = load_providers(app.clone())?;
+    let path = get_projects_file_path(app.clone())?;
+    let mut projects = load_projects_from_path(&path, &providers)?;
+    let normalized_project = project.normalize(&providers);
+
+    validate_project(&normalized_project, &providers)?;
+
+    if let Some(pos) = projects
+        .iter()
+        .position(|item| item.id == normalized_project.id)
+    {
+        projects[pos] = normalized_project;
+    } else {
+        projects.push(normalized_project);
+    }
+
+    write_projects_to_path(&path, &projects)
+}
+
+#[tauri::command]
+fn delete_project(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let providers = load_providers(app.clone())?;
+    let path = get_projects_file_path(app)?;
+    let mut projects = load_projects_from_path(&path, &providers)?;
+    projects.retain(|project| project.id != id);
+    write_projects_to_path(&path, &projects)
+}
+
+#[tauri::command]
+fn get_terminal_tool_presets() -> Vec<TerminalToolPreset> {
+    terminal_tool_presets()
+}
+
+#[tauri::command]
+fn launch_project(app: tauri::AppHandle, id: String) -> Result<LaunchProjectResult, String> {
+    let providers = load_providers(app.clone())?;
+    let projects_path = get_projects_file_path(app.clone())?;
+    let projects = load_projects_from_path(&projects_path, &providers)?;
+    let project = projects
+        .iter()
+        .find(|project| project.id == id)
+        .ok_or("Project not found")?
+        .clone();
+
+    validate_project(&project, &providers)?;
+
+    if !Path::new(&project.path).exists() {
+        return Err("Project path does not exist".to_string());
+    }
+
+    if !claude_installed() {
+        return Err("请先安装 claude".to_string());
+    }
+
+    let provider = providers
+        .iter()
+        .find(|provider| provider.id == project.provider_id)
+        .ok_or("Selected provider not found")?
+        .clone();
+    let shell_kind = shell_kind_for_tool(&project.terminal_tool)?;
+    let launch_command = render_launch_command(
+        &project.launch_command_template,
+        &project.path,
+        &project.model,
+        shell_kind,
+    );
+    let command = prepend_provider_env_to_command(&launch_command, &provider, shell_kind);
+
+    let open_command_template = if terminal_requires_open_command_template(&project.terminal_tool) {
+        Some(project.terminal_open_command_template.as_str())
+    } else {
+        None
+    };
+
+    launch_command_in_terminal(&project.terminal_tool, &command, open_command_template)?;
+
+    Ok(LaunchProjectResult {
+        command,
+        terminal_tool: project.terminal_tool,
+        provider_name: provider.name,
+        project_name: project.name,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -685,6 +1490,11 @@ pub fn run() {
             save_provider,
             delete_provider,
             switch_provider,
+            load_projects,
+            save_project,
+            delete_project,
+            get_terminal_tool_presets,
+            launch_project,
             load_templates,
             save_template,
             delete_template,

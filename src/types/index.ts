@@ -36,6 +36,45 @@ export type ProviderFormState = {
   customEnv: ProviderCustomEnv
 }
 
+export type Project = {
+  id: string
+  name: string
+  path: string
+  providerId: string
+  model: string
+  terminalTool: string
+  launchCommandTemplate: string
+  terminalOpenCommandTemplate: string
+  createdAt: number
+  updatedAt: number
+}
+
+export type ProjectFormState = {
+  name: string
+  path: string
+  providerId: string
+  model: string
+  terminalTool: string
+  launchCommandTemplate: string
+  terminalOpenCommandTemplate: string
+}
+
+export type TerminalToolPreset = {
+  id: string
+  name: string
+  description: string
+  defaultCommandTemplate: string
+  defaultOpenCommandTemplate: string
+  requiresOpenCommandTemplate: boolean
+}
+
+export type LaunchProjectResult = {
+  command: string
+  terminalTool: string
+  providerName: string
+  projectName: string
+}
+
 export type Template = {
   id: string
   name: string

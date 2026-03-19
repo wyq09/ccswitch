@@ -27,6 +27,18 @@
             </svg>
             <span>{{ t('nav.providers') }}</span>
           </router-link>
+          <router-link
+            to="/projects"
+            class="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 font-medium"
+            :class="isProjectsRoute
+              ? 'bg-orange-500 text-white shadow-md'
+              : 'text-gray-300 hover:bg-white/10 hover:text-white'"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h5l2 2h11v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+            </svg>
+            <span>{{ t('nav.projects') }}</span>
+          </router-link>
         </nav>
 
         <!-- Footer -->
@@ -66,6 +78,7 @@ import logoImage from '@/assets/logo.png'
 
 const { t } = useI18n()
 const route = useRoute()
+const isProjectsRoute = computed(() => route.path.startsWith('/projects'))
 const isProvidersRoute = computed(() => route.path.startsWith('/providers'))
 const { visible: toastVisible, message: toastMessage, type: toastType } = useToast()
 </script>
